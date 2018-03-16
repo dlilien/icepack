@@ -6,6 +6,7 @@ from icepack.constants import rho_ice, rho_water, \
 from icepack.models.viscosity import viscosity_depth_averaged as viscosity
 from icepack.models.mass_transport import MassTransport
 from icepack.optimization import newton_search
+from icepack.utilities import add_kwarg_wrapper
 
 
 def tau_b(u, C):
@@ -14,7 +15,7 @@ def tau_b(u, C):
     return -C * sqrt(inner(u, u))**(1/m - 1) * u
 
 
-def friction(u=None, C=None, **kwargs):
+def friction(u=None, C=None):
     """Return the frictional part of the ice stream action functional
 
     The frictional part of the ice stream action functional is
@@ -30,7 +31,7 @@ def friction(u=None, C=None, **kwargs):
     return -m/(m + 1) * inner(tau_b(u, C), u) * dx
 
 
-def gravity(u=None, h=None, s=None, **kwargs):
+def gravity(u=None, h=None, s=None):
     """Return the gravitational part of the ice stream action functional
 
     The gravitational part of the ice stream action functional is
@@ -50,7 +51,7 @@ def gravity(u=None, h=None, s=None, **kwargs):
     return -rho_ice * g * h * inner(grad(s), u) * dx
 
 
-def terminus(u=None, h=None, s=None, ice_front_ids=None, **kwargs):
+def terminus(u=None, h=None, s=None, ice_front_ids=None):
     """Return the terminal stress part of the ice stream action functional
 
     The power exerted due to stress at the ice calving terminus :math:`\Gamma`
@@ -101,10 +102,21 @@ class IceStream(object):
     def __init__(self, viscosity=viscosity, friction=friction,
                        gravity=gravity, terminus=terminus):
         self.mass_transport = MassTransport()
-        self.viscosity = viscosity
-        self.friction = friction
-        self.gravity = gravity
-        self.terminus = terminus
+        self.viscosity = add_kwarg_wrapper(viscosity)
+        self.friction = add_kwarg_wrapper(friction)
+        self.gravity = add_kwarg_wrapper(gravity)
+        self.terminus = add_kwarg_wrapper(terminus)
+
+    def action(self, u=None, h=None, s=None, ice_front_ids=[], **kwargs):
+        """Return the action functional that gives the ice stream diagnostic
+        model as the Euler-Lagrange equations"""
+        viscosity = self.viscosity(u=u, h=h, s=s, **kwargs)
+        friction = self.friction(u=u, h=h, s=s, **kwargs)
+        gravity = self.gravity(u=u, h=h, s=s, **kwargs)
+        terminus = self.terminus(u=u, h=h, s=s,
+                                 ice_front_ids=ice_front_ids, **kwargs)
+
+        return viscosity + friction - gravity - terminus
 
     def diagnostic_solve(self, u0=None, h=None, s=None,
                          dirichlet_ids=[], tol=1e-6, **kwargs):
@@ -141,20 +153,16 @@ class IceStream(object):
         u = u0.copy(deepcopy=True)
         viscosity = self.viscosity(u=u, h=h, s=s, **kwargs)
         friction = self.friction(u=u, **kwargs)
-        gravity = self.gravity(u=u, h=h, s=s, **kwargs)
+        scale = firedrake.assemble(viscosity + friction)
+        tolerance = tol * scale
 
         mesh = u.ufl_domain()
         boundary_ids = list(mesh.topology.exterior_facets.unique_markers)
         IDs = list(set(boundary_ids) - set(dirichlet_ids))
-        terminus = self.terminus(u=u, h=h, s=s, ice_front_ids=IDs, **kwargs)
-
-        scale = firedrake.assemble(viscosity + friction)
-        tolerance = tol * scale
-
         bcs = [firedrake.DirichletBC(u.function_space(), (0, 0), k)
                for k in dirichlet_ids]
 
-        action = viscosity + friction - gravity - terminus
+        action = self.action(u=u, h=h, s=s, ice_front_ids=IDs, **kwargs)
         return newton_search(action, u, bcs, tolerance)
 
     def prognostic_solve(self, dt, h0=None, a=None, u=None, **kwargs):
@@ -170,11 +178,10 @@ class IceStream(object):
         will go afloat. The surface elevation of a floating ice shelf is
 
         .. math::
-           s = (1 - rho_I / rho_W)h,
+           s = (1 - \rho_I / \rho_W)h,
 
         provided everything is in hydrostatic balance.
         """
         Q = h.ufl_function_space()
         s_expr = firedrake.max_value(h + b, (1 - rho_ice / rho_water) * h)
         return firedrake.interpolate(s_expr, Q)
-
