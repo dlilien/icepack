@@ -45,6 +45,15 @@ def write(fn, q, missing=-9999, t_srs=None):
 
 
 def read(fn):
+    """Read a gridded geotiff
+
+    Parameters
+    ----------
+
+    fn: str
+        File to read. This does not actually need to be a geotiff, but any gdal-readable file
+    """
+
     ds = gdal.Open(fn, gdal.GA_ReadOnly)
     gt = ds.GetGeoTransform()
     band = ds.GetRasterBand(1)
