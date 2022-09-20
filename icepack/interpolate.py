@@ -44,7 +44,12 @@ def _sample(dataset, X, method):
     xs = np.linspace(upper_left[0], lower_right[0], window.width)
     ys = np.linspace(lower_right[1], upper_left[1], window.height)
 
-    data = np.flipud(dataset.read(indexes=1, window=window, masked=True)).T
+    if lower_right[1] < upper_left[1]:
+        ys = np.linspace(lower_right[1], upper_left[1], window.height)
+        data = np.flipud(dataset.read(indexes=1, window=window, masked=True)).T
+    else:
+        ys = np.linspace(upper_left[1], lower_right[1], window.height)
+        data = dataset.read(indexes=1, window=window, masked=True).T
     interpolator = RegularGridInterpolator((xs, ys), data, method=method)
     return interpolator(X, method=method)
 
