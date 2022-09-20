@@ -4,8 +4,9 @@ commands:
   build:
     steps:
       - checkout
-      - run: pip3 install --editable ."[doc]"
-      - run: pip3 install pytest-cov codecov
+      - run: pip install rasterio==1.3a4  # <- Dirty hack, remove later
+      - run: pip install --editable ."[doc,opt]"
+      - run: pip install pytest-cov codecov
   unittest:
     steps:
       - run: pytest --capture=no --verbose --cov=icepack
@@ -18,21 +19,21 @@ commands:
       - run: codecov
   styletest:
     steps:
-      - run: pip3 install black==21.12b0
+      - run: pip install black>=22.0
       - run: black --check ./
 
 jobs:
-  python36:
+  python38:
     docker:
-      - image: icepack/firedrake-python3.6:0.5.7
+      - image: icepack/firedrake-python3.8:0.6.0
     working_directory: ~/icepack
     steps:
       - build
       - unittest
       - realtest
-  python38:
+  python310:
     docker:
-      - image: icepack/firedrake-python3.8:0.5.7
+      - image: icepack/firedrake-python3.10:0.6.0
     working_directory: ~/icepack
     steps:
       - build
@@ -45,5 +46,5 @@ workflows:
   version: 2
   tests:
     jobs:
-      - python36
       - python38
+      - python310
