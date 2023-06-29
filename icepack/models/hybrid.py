@@ -20,7 +20,7 @@ from icepack.models.mass_transport import Continuity
 from icepack.constants import (
     ice_density as ρ_I,
     water_density as ρ_W,
-    glen_flow_law as n,
+    glen_flow_law as n0,
     gravity as g,
     strain_rate_min,
 )
@@ -111,6 +111,7 @@ def stresses(**kwargs):
     horizontal and shear strain rates and fluidity"""
     ε_x, ε_z, A = itemgetter("strain_rate_x", "strain_rate_z", "fluidity")(kwargs)
     ε_min = firedrake.Constant(kwargs.get("strain_rate_min", strain_rate_min))
+    n = firedrake.Constant(kwargs.get("n", n0))
     ε_e = _effective_strain_rate(ε_x, ε_z, ε_min)
     μ = 0.5 * A ** (-1 / n) * ε_e ** (1 / n - 1)
     I = Identity(ε_x.ufl_domain().geometric_dimension() - 1)
@@ -170,6 +171,7 @@ def viscosity(**kwargs):
     firedrake.Form
     """
     u, h, s, A = itemgetter("velocity", "thickness", "surface", "fluidity")(kwargs)
+    n = firedrake.Constant(kwargs.get("n", n0))
     ε_min = kwargs.get("strain_rate_min", firedrake.Constant(strain_rate_min))
 
     ε_x = horizontal_strain_rate(velocity=u, surface=s, thickness=h)
