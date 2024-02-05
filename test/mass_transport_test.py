@@ -1,180 +1,348 @@
-import math
+# Copyright (C) 2017-2021 by Daniel Shapero <shapero@uw.edu>
+#
+# This file is part of icepack.
+#
+# icepack is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# The full text of the license can be found in the file LICENSE in the
+# icepack source directory or at <http://www.gnu.org/licenses/>.
+
+import pytest
 import numpy as np
-from firedrake import RectangleMesh, FunctionSpace, VectorFunctionSpace
+import firedrake
+from firedrake import Constant, interpolate, assemble, dx
 import icepack
-from icepack.models.mass_transport import MassTransport
+
+
+def norm(v):
+    return icepack.norm(v, norm_type="L1")
+
 
 # Test solving the mass transport equations with a constant velocity field
 # and check that the solutions converge to the exact solution obtained from
 # the method of characteristics.
-def test_mass_transport_solver_convergence():
-    L, W = 1.0, 1.0
+@pytest.mark.parametrize("solver_type", ["implicit-euler", "lax-wendroff"])
+def test_mass_transport_solver_convergence(solver_type):
+    Lx, Ly = 1.0, 1.0
     u0 = 1.0
     h_in, dh = 1.0, 0.2
 
-    def thickness_initial(x):
-        return h_in - dh * x[0] / L
-
-    def thickness_exact(x, t):
-        z = (x[0] - u0 * t, x[1])
-        return h_in if z[0] < 0 else thickness_initial(z)
-
     delta_x, error = [], []
-    mass_transport = MassTransport()
-    norm = lambda v: icepack.norm(v, norm_type='L1')
-    for N in range(16, 97, 4):
-        mesh = RectangleMesh(N, N, L, W)
-        delta_x.append(L / N)
+    model = icepack.models.IceShelf()
+    for N in range(24, 97, 4):
+        delta_x.append(Lx / N)
+
+        mesh = firedrake.RectangleMesh(N, N, Lx, Ly)
+        x, y = firedrake.SpatialCoordinate(mesh)
 
         degree = 1
-        V = VectorFunctionSpace(mesh, 'CG', degree)
-        Q = FunctionSpace(mesh, 'CG', degree)
+        V = firedrake.VectorFunctionSpace(mesh, "CG", degree)
+        Q = firedrake.FunctionSpace(mesh, "CG", degree)
+        solver = icepack.solvers.FlowSolver(model, prognostic_solver_type=solver_type)
 
-        h = icepack.interpolate(thickness_initial, Q)
-        a = icepack.interpolate(lambda x: 0.0, Q)
-        u = icepack.interpolate(lambda x: (u0, 0.0), V)
+        h0 = interpolate(h_in - dh * x / Lx, Q)
+        a = firedrake.Function(Q)
+        u = interpolate(firedrake.as_vector((u0, 0)), V)
         T = 0.5
-        num_timesteps = math.ceil(0.5 * N * u0 * T / L)
-        dt = T / num_timesteps
+        δx = 1.0 / N
+        δt = δx / u0
+        num_timesteps = int(T / δt)
 
-        for k in range(num_timesteps):
-            h = mass_transport.solve(dt, h0=h, a=a, u=u)
+        h = h0.copy(deepcopy=True)
+        for step in range(num_timesteps):
+            h = solver.prognostic_solve(
+                δt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h0
+            )
 
-        h_exact = icepack.interpolate(lambda x: thickness_exact(x, T), Q)
+        z = x - u0 * num_timesteps * δt
+        h_exact = interpolate(h_in - dh / Lx * firedrake.max_value(0, z), Q)
         error.append(norm(h - h_exact) / norm(h_exact))
-
-        print(delta_x[-1], error[-1])
 
     log_delta_x = np.log2(np.array(delta_x))
     log_error = np.log2(np.array(error))
     slope, intercept = np.polyfit(log_delta_x, log_error, 1)
 
-    print(slope, intercept)
+    print(f"log(error) ~= {slope:g} * log(dx) {intercept:+g}")
+    assert slope > degree - 0.1
 
 
-from icepack.constants import rho_ice, rho_water, gravity, glen_flow_law as n
+from icepack.constants import (
+    ice_density as ρ_I,
+    water_density as ρ_W,
+    glen_flow_law as n,
+    weertman_sliding_law as m,
+    gravity as g,
+)
+
 
 # Test solving the coupled diagnostic/prognostic equations for an ice shelf
 # with thickness and velocity fields that are exactly insteady state.
-def test_ice_shelf_coupled_diagnostic_prognostic_solver():
-    from icepack.models import IceShelf
-    rho = rho_ice * (1 - rho_ice/rho_water)
+@pytest.mark.parametrize("solver_type", ["implicit-euler", "lax-wendroff"])
+def test_ice_shelf_prognostic_solver(solver_type):
+    ρ = ρ_I * (1 - ρ_I / ρ_W)
 
-    L, W = 20.0e3, 20.0e3
-    h0, dh = 500.0, 100.0
+    Lx, Ly = 20.0e3, 20.0e3
+    h0 = 500.0
     u0 = 100.0
-
     T = 254.15
-    def velocity(x):
-        q = (n + 1) * (rho * gravity * h0 * u0 / 4)**n * icepack.rate_factor(T)
-        return ((u0**(n + 1) + q * x[0])**(1/(n + 1)), 0)
 
-    def thickness(x):
-        return h0 * u0 / velocity(x)[0]
-
-    ice_shelf = IceShelf()
-    degree = 2
-    opts = {'dirichlet_ids': [1, 3, 4], 'tol': 1e-12}
-    norm = lambda h: icepack.norm(h, norm_type='L1')
+    model = icepack.models.IceShelf()
+    opts = {
+        "dirichlet_ids": [1],
+        "side_wall_ids": [3, 4],
+        "prognostic_solver_type": solver_type,
+    }
 
     delta_x, error = [], []
     for N in range(16, 65, 4):
-        mesh = RectangleMesh(N, N, L, W)
-        delta_x.append(L / N)
+        delta_x.append(Lx / N)
 
-        V = VectorFunctionSpace(mesh, 'CG', degree)
-        Q = FunctionSpace(mesh, 'CG', degree)
+        mesh = firedrake.RectangleMesh(N, N, Lx, Ly)
+        x, y = firedrake.SpatialCoordinate(mesh)
 
-        u = icepack.interpolate(velocity, V)
-        h = icepack.interpolate(thickness, Q)
-        h_init = h.copy(deepcopy=True)
-        A = icepack.interpolate(lambda x: icepack.rate_factor(T), Q)
-        a = icepack.interpolate(lambda x: 0.0, Q)
+        degree = 2
+        V = firedrake.VectorFunctionSpace(mesh, "CG", degree)
+        Q = firedrake.FunctionSpace(mesh, "CG", degree)
 
-        final_time, dt = 1.0, 1.0/12
-        num_timesteps = math.ceil(final_time / dt)
+        q = (n + 1) * (ρ * g * h0 * u0 / 4) ** n * icepack.rate_factor(T)
+        ux = (u0 ** (n + 1) + q * x) ** (1 / (n + 1))
+
+        h = interpolate(h0 * u0 / ux, Q)
+        h_initial = h.copy(deepcopy=True)
+
+        A = Constant(icepack.rate_factor(T))
+        a = Constant(0)
+
+        solver = icepack.solvers.FlowSolver(model, **opts)
+        u_guess = interpolate(firedrake.as_vector((ux, 0)), V)
+        u = solver.diagnostic_solve(
+            velocity=u_guess, thickness=h, fluidity=A, strain_rate_min=Constant(0.0)
+        )
+
+        final_time, dt = 1.0, 1.0 / 12
+        num_timesteps = int(final_time / dt)
 
         for k in range(num_timesteps):
-            u = ice_shelf.diagnostic_solve(h=h, A=A, u0=u, **opts)
-            h = ice_shelf.prognostic_solve(dt, h0=h, a=a, u=u)
+            h = solver.prognostic_solve(
+                dt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h_initial
+            )
 
-        error.append(norm(h - h_init) / norm(h_init))
-        print(delta_x[-1], error[-1])
+            u = solver.diagnostic_solve(
+                velocity=u, thickness=h, fluidity=A, strain_rate_min=Constant(0.0)
+            )
+
+        error.append(norm(h - h_initial) / norm(h_initial))
 
     log_delta_x = np.log2(np.array(delta_x))
     log_error = np.log2(np.array(error))
     slope, intercept = np.polyfit(log_delta_x, log_error, 1)
 
-    print(slope, intercept)
+    print(f"log(error) ~= {slope:g} * log(dx) {intercept:+g}")
     assert slope > degree - 0.05
+
+
+# Test solving the shallow ice approximation forward in time with no
+# accumulation and outflow and check that the total ice volume is conserved
+def test_shallow_ice_prognostic_solve():
+    R = Constant(500e3)
+    num_refinements = 4
+    mesh = firedrake.UnitDiskMesh(num_refinements)
+    mesh.coordinates.dat.data[:] *= float(R)
+    T = Constant(254.15)
+    A = icepack.rate_factor(T)
+
+    Q = firedrake.FunctionSpace(mesh, "CG", 2)
+    V = firedrake.VectorFunctionSpace(mesh, "CG", 2)
+
+    x, y = firedrake.SpatialCoordinate(mesh)
+    r = firedrake.sqrt(x**2 + y**2)
+
+    β = Constant(0.5)
+    h_divide = Constant(4e3)
+    h_expr = h_divide * firedrake.max_value(0, 1 - (r / (β * R)) ** 2)
+    h_0 = interpolate(h_expr, Q)
+    h = h_0.copy(deepcopy=True)
+    u = firedrake.Function(V)
+
+    b = Constant(0.0)
+    s = interpolate(b + h, Q)
+    a = Constant(0.0)
+
+    model = icepack.models.ShallowIce()
+    solver = icepack.solvers.FlowSolver(model)
+
+    final_time = 100.0
+    dt = 1.0
+    num_steps = int(final_time / dt)
+
+    for step in range(num_steps):
+        u = solver.diagnostic_solve(velocity=u, thickness=h, surface=s, fluidity=A)
+
+        h = solver.prognostic_solve(dt, thickness=h, velocity=u, accumulation=a)
+
+        h.interpolate(firedrake.max_value(0, h))
+        s.assign(b + h)
+
+    error = abs(assemble(h * dx) / assemble(h_0 * dx) - 1)
+    assert error < 1 / 2 ** (num_refinements + 1)
 
 
 # Test solving the coupled diagnostic/prognostic equations for an ice stream
 # and check that it doesn't explode. TODO: Manufacture a solution.
-def test_ice_stream_coupled_diagnostic_prognostic_solve():
-    from icepack.models import IceStream
-
-    L, W = 20e3, 20e3
-
-    ice_stream = IceStream()
-    degree = 2
-    opts = {"dirichlet_ids": [1, 3, 4], "tol": 1e-12}
-
-    N = 32
-    mesh = RectangleMesh(N, N, L, W)
-    V = VectorFunctionSpace(mesh, 'CG', degree)
-    Q = FunctionSpace(mesh, 'CG', degree)
-
+def test_ice_stream_prognostic_solve():
+    Lx, Ly = 20e3, 20e3
     h0, dh = 500.0, 100.0
-    def thickness(x):
-        return h0 - dh * x[0] / L
-
-    height_above_flotation = 10.0
-    d = -rho_ice / rho_water * thickness((L, W/2)) + height_above_flotation
-    rho = rho_ice - rho_water * d**2 / thickness((L, W/2))**2
-
     T = 254.15
     u0 = 100.0
-    def velocity_initial(x):
-        A = icepack.rate_factor(T) * (rho * gravity * h0 / 4)**n
-        q = 1 - (1 - (dh/h0) * (x[0]/L))**(n + 1)
-        du = A * q * L * (h0/dh) / (n + 1)
-        return (u0 + du, 0.0)
 
-    beta = 1/2
-    alpha = beta * rho / rho_ice * dh / L
-    def friction(x):
-        from icepack.constants import weertman_sliding_law as m
-        u = velocity_initial(x)[0]
-        h = thickness(x)
-        return alpha * (rho_ice * gravity * h) * u**(-1/m)
+    model = icepack.models.IceStream()
+    opts = {"dirichlet_ids": [1], "side_wall_ids": [3, 4]}
 
-    ds = (1 + beta) * rho/rho_ice * dh
-    def surface(x):
-        return d + h0 - dh + ds * (1 - x[0] / L)
+    N = 32
+    mesh = firedrake.RectangleMesh(N, N, Lx, Ly)
 
-    def bed(x):
-        return surface(x) - thickness(x)
+    V = firedrake.VectorFunctionSpace(mesh, "CG", 2)
+    Q = firedrake.FunctionSpace(mesh, "CG", 2)
+    solver = icepack.solvers.FlowSolver(model, **opts)
 
-    u = icepack.interpolate(velocity_initial, V)
-    h = icepack.interpolate(thickness, Q)
-    s = icepack.interpolate(surface, Q)
-    b = icepack.interpolate(bed, Q)
-    C = icepack.interpolate(friction, Q)
-    A = icepack.interpolate(lambda x: icepack.rate_factor(T), Q)
+    x, y = firedrake.SpatialCoordinate(mesh)
+    height_above_flotation = 10.0
+    d = -ρ_I / ρ_W * (h0 - dh) + height_above_flotation
+    ρ = ρ_I - ρ_W * d**2 / (h0 - dh) ** 2
 
-    final_time, dt = 1.0, 1.0/12
-    num_timesteps = math.ceil(final_time / dt)
+    Z = icepack.rate_factor(T) * (ρ * g * h0 / 4) ** n
+    q = 1 - (1 - (dh / h0) * (x / Lx)) ** (n + 1)
+    ux = u0 + Z * q * Lx * (h0 / dh) / (n + 1)
+    u0 = interpolate(firedrake.as_vector((ux, 0)), V)
 
-    a = icepack.interpolate(lambda x: 0.0, Q)
-    a = (ice_stream.prognostic_solve(dt, h0=h, a=a, u=u) - h) / dt
+    thickness = h0 - dh * x / Lx
+    β = 1 / 2
+    α = β * ρ / ρ_I * dh / Lx
+    h = interpolate(h0 - dh * x / Lx, Q)
+    h_inflow = h.copy(deepcopy=True)
+    ds = (1 + β) * ρ / ρ_I * dh
+    s = interpolate(d + h0 - dh + ds * (1 - x / Lx), Q)
+    b = interpolate(s - h, Q)
 
-    import matplotlib.pyplot as plt
+    C = interpolate(α * (ρ_I * g * thickness) * ux ** (-1 / m), Q)
+    A = Constant(icepack.rate_factor(T))
+
+    final_time, dt = 1.0, 1.0 / 12
+    num_timesteps = int(final_time / dt)
+
+    u = solver.diagnostic_solve(
+        velocity=u0,
+        thickness=h,
+        surface=s,
+        fluidity=A,
+        friction=C,
+        strain_rate_min=Constant(0.0),
+    )
+
+    a = firedrake.Function(Q)
+    h_n = solver.prognostic_solve(
+        dt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h_inflow
+    )
+    a.interpolate((h_n - h) / dt)
 
     for k in range(num_timesteps):
-        u = ice_stream.diagnostic_solve(u0=u, h=h, s=s, C=C, A=A, **opts)
-        h = ice_stream.prognostic_solve(dt, h0=h, a=a, u=u)
-        s = ice_stream.compute_surface(h=h, b=b)
+        h = solver.prognostic_solve(
+            dt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h_inflow
+        )
+        s = icepack.compute_surface(thickness=h, bed=b)
 
-    assert icepack.norm(h, norm_type='Linfty') < np.inf
+        u = solver.diagnostic_solve(
+            velocity=u,
+            thickness=h,
+            surface=s,
+            fluidity=A,
+            friction=C,
+            strain_rate_min=Constant(0.0),
+        )
 
+    assert icepack.norm(h, norm_type="Linfty") < np.inf
+
+
+# Test solving the coupled diagnostic/prognostic equations for the hybrid flow
+# model and check that it doesn't explode.
+@pytest.mark.parametrize("solver_type", ["implicit-euler", "lax-wendroff"])
+def test_hybrid_prognostic_solve(solver_type):
+    Lx, Ly = 20e3, 20e3
+    h0, dh = 500.0, 100.0
+    T = 254.15
+    u_in = 100.0
+
+    model = icepack.models.HybridModel()
+    opts = {
+        "dirichlet_ids": [1],
+        "side_wall_ids": [3, 4],
+        "prognostic_solver_type": solver_type,
+    }
+
+    Nx, Ny = 32, 32
+    mesh2d = firedrake.RectangleMesh(Nx, Ny, Lx, Ly)
+    mesh = firedrake.ExtrudedMesh(mesh2d, layers=1)
+
+    V = firedrake.VectorFunctionSpace(mesh, "CG", 2, vfamily="GL", vdegree=1, dim=2)
+    Q = firedrake.FunctionSpace(mesh, "CG", 2, vfamily="DG", vdegree=0)
+
+    x, y, ζ = firedrake.SpatialCoordinate(mesh)
+    height_above_flotation = 10.0
+    d = -ρ_I / ρ_W * (h0 - dh) + height_above_flotation
+    ρ = ρ_I - ρ_W * d**2 / (h0 - dh) ** 2
+
+    Z = icepack.rate_factor(T) * (ρ * g * h0 / 4) ** n
+    q = 1 - (1 - (dh / h0) * (x / Lx)) ** (n + 1)
+    ux = u_in + Z * q * Lx * (h0 / dh) / (n + 1)
+    u0 = interpolate(firedrake.as_vector((ux, 0)), V)
+
+    thickness = h0 - dh * x / Lx
+    β = 1 / 2
+    α = β * ρ / ρ_I * dh / Lx
+    h = interpolate(h0 - dh * x / Lx, Q)
+    h_inflow = h.copy(deepcopy=True)
+    ds = (1 + β) * ρ / ρ_I * dh
+    s = interpolate(d + h0 - dh + ds * (1 - x / Lx), Q)
+    b = interpolate(s - h, Q)
+
+    C = interpolate(α * (ρ_I * g * thickness) * ux ** (-1 / m), Q)
+    A = Constant(icepack.rate_factor(T))
+
+    final_time, dt = 1.0, 1.0 / 12
+    num_timesteps = int(final_time / dt)
+
+    solver = icepack.solvers.FlowSolver(model, **opts)
+    u = solver.diagnostic_solve(
+        velocity=u0,
+        thickness=h,
+        surface=s,
+        fluidity=A,
+        friction=C,
+        strain_rate_min=Constant(0.0),
+    )
+
+    a = firedrake.Function(Q)
+    h_n = solver.prognostic_solve(
+        dt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h_inflow
+    )
+    a.interpolate((h_n - h) / dt)
+
+    for k in range(num_timesteps):
+        h = solver.prognostic_solve(
+            dt, thickness=h, velocity=u, accumulation=a, thickness_inflow=h_inflow
+        )
+        s = icepack.compute_surface(thickness=h, bed=b)
+
+        u = solver.diagnostic_solve(
+            velocity=u,
+            thickness=h,
+            surface=s,
+            fluidity=A,
+            friction=C,
+            strain_rate_min=Constant(0.0),
+        )
+
+    assert icepack.norm(h, norm_type="Linfty") < np.inf

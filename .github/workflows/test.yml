@@ -1,0 +1,34 @@
+name: 'Build and test icepack'
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/firedrakeproject/firedrake-vanilla:2023-12
+      options: --user root
+    steps:
+      - name: Install patchelf
+        run: |
+          apt update
+          apt install -yq patchelf
+      - name: Check out git repository
+        uses: actions/checkout@v3
+      - name: Activate Firedrake virtual environment
+        run: |
+          . /home/firedrake/firedrake/bin/activate
+          echo PATH=$PATH >> $GITHUB_ENV
+      - name: Install package
+        run: |
+          pip install git+https://github.com/icepack/Trilinos.git@190384db6cb1d148cea36f2d8d69033a90b2d991
+          pip install git+https://github.com/icepack/pyrol.git@3bc1802e436eda8949a286abf54528c7a882f706
+          pip install jupyter ipykernel nbconvert
+          python -m ipykernel install --user --name=firedrake
+          pip install --editable .
+      - name: Run unit tests
+        run: pytest
+      - name: Run example notebooks
+        run: |
+          jupyter nbconvert --to notebook --execute notebooks/tutorials/02-synthetic-ice-shelf.ipynb
+          jupyter nbconvert --to notebook --execute notebooks/how-to/01-performance.ipynb
+          jupyter nbconvert --to notebook --execute notebooks/how-to/02-checkpointing.ipynb
+          jupyter nbconvert --to notebook --execute notebooks/how-to/03-adaptivity.ipynb
