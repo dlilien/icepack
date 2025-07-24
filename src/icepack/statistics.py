@@ -156,7 +156,7 @@ class MaximumProbabilityEstimator:
     def state(self):
         return self._state
 
-    def solve(self):
+    def solve(self, **cbs):
         firedrake.adjoint.continue_annotation()
         controls = self.problem.controls
         if isinstance(controls, (firedrake.Function, firedrake.Constant)):
@@ -171,10 +171,10 @@ class MaximumProbabilityEstimator:
         J = E + R
 
         if isinstance(self.controls, (firedrake.Function, firedrake.Constant)):
-            reduced_objective = ReducedFunctional(J, Control(self.controls))
+            reduced_objective = ReducedFunctional(J, Control(self.controls), **cbs)
         else:
             controls = [Control(field) for field in self.controls]
-            reduced_objective = ReducedFunctional(J, controls)
+            reduced_objective = ReducedFunctional(J, controls, **cbs)
 
         # Form the minimization problem and solver
         if isinstance(self._solver_type, str) and self._solver_type.lower() == "rol":
