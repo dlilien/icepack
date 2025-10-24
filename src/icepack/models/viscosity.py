@@ -80,6 +80,41 @@ def rate_factor(T):
     return A0 * np.exp(-Q / (R * T))
 
 
+def rate_factor_array(T_array):
+    """Compute the rate factor in Glen's flow law for a given temperature
+
+    The strain rate :math:`\dot\\varepsilon` of ice resulting from a stress
+    :math:`\\tau` is
+
+    .. math::
+       \dot\\varepsilon = A(T)\\tau^3
+
+    where :math:`A(T)` is the temperature-dependent rate factor:
+
+    .. math::
+       A(T) = A_0\exp(-Q/RT)
+
+    where :math:`R` is the ideal gas constant, :math:`Q` has units of
+    energy per mole, and :math:`A_0` is a prefactor with units of
+    pressure :math:`\\text{MPa}^{-3}\\times\\text{yr}^{-1}`.
+    """
+    cold = T_array < transition_temperature
+    A0 = zeros(T_array.shape)
+    A0[cold] = A0_cold
+    A0[~cold] = A0_warm
+
+    Q = zeros(T_array.shape)
+    Q[cold] = Q_cold
+    Q[~cold] = Q_warm
+    return A0 * exp(-Q / (R * T_array))
+
+
+def eps(u):
+    """Calculate the strain rate for a given flow velocity"""
+    return sym(grad(u))
+
+
+
 def _effective_strain_rate(ε, ε_min):
     return sqrt((inner(ε, ε) + trace(ε) ** 2 + ε_min**2) / 2)
 
