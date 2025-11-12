@@ -55,6 +55,8 @@ class FlowSolver:
             factorization of the flux matrix using MUMPS
         set_objective : bool, optional
             Experimental feature -- use the action functional for line searches
+        bcs : list, optional
+            Directly specify a boundary condition for use in subsequent solutions.
 
         Examples
         --------
@@ -103,6 +105,7 @@ class FlowSolver:
             diagnostic_parameters,
             dirichlet_ids=kwargs.pop("dirichlet_ids", []),
             side_wall_ids=kwargs.pop("side_wall_ids", []),
+            bcs=kwargs.pop("bcs", []),
             **kwargs,
         )
 
@@ -290,6 +293,7 @@ class IcepackSolver:
         solver_parameters,
         dirichlet_ids=[],
         side_wall_ids=[],
+        bcs=[],
         **kwargs,
     ):
         r"""Diagnostic solver implementation using hand-written Newton line
@@ -306,6 +310,7 @@ class IcepackSolver:
         self._max_iterations = self._solver_parameters.pop("max_iterations", 50)
         self._dirichlet_ids = dirichlet_ids
         self._side_wall_ids = side_wall_ids
+        self._bcs = bcs
 
     def setup(self, **kwargs):
         for name, field in kwargs.items():
@@ -322,20 +327,31 @@ class IcepackSolver:
                         % (name, type(field))
                     )
 
+        # Some boundary conditions may have been specified at solver creation
+        bcs = self._manual_bcs
+
+        # If we get new boundary conditions, overwrite the old ones. If not, append
+        if "bcs" in kwargs:
+            bc_ids = [bc.sub_domain for bc in bcs]
+            for bc in kwargs["bcs"]:
+                if bc.sub_domain in bc_ids:
+                    bcs[bc_ids.index(bc.sub_domain)] = bc
+        bc_ids = [bc.sub_domain for bc in bcs]
+
         # Create homogeneous BCs for the Dirichlet part of the boundary
         u = self._fields["velocity"]
         V = u.function_space()
         # NOTE: This will have to change when we do Stokes!
         if hasattr(V._ufl_element, "_sub_element"):
-            bcs = firedrake.DirichletBC(V, Constant((0, 0)), self._dirichlet_ids)
+            bcs.append(firedrake.DirichletBC(V, Constant((0, 0)), self._dirichlet_ids))
         else:
-            bcs = firedrake.DirichletBC(V, Constant(0), self._dirichlet_ids)
-        if not self._dirichlet_ids:
+            bcs.append(firedrake.DirichletBC(V, Constant(0), self._dirichlet_ids))
+        if len(bcs) == 1 and not self._dirichlet_ids:
             bcs = None
 
         # Find the numeric IDs for the ice front
         boundary_ids = u.function_space().mesh().exterior_facets.unique_markers
-        ice_front_ids_comp = set(self._dirichlet_ids + self._side_wall_ids)
+        ice_front_ids_comp = set(self._dirichlet_ids + self._side_wall_ids + bc_ids)
         ice_front_ids = list(set(boundary_ids) - ice_front_ids_comp)
 
         # Create the action and scale functionals
@@ -378,6 +394,7 @@ class PETScSolver:
         solver_parameters,
         dirichlet_ids=[],
         side_wall_ids=[],
+        bcs = [],
         **kwargs,
     ):
         r"""Diagnostic solver implementation using PETSc SNES"""
@@ -386,6 +403,7 @@ class PETScSolver:
         self._solver_parameters = solver_parameters
         self._dirichlet_ids = dirichlet_ids
         self._side_wall_ids = side_wall_ids
+        self._manual_bcs = bcs
 
     def setup(self, **kwargs):
         for name, field in kwargs.items():
@@ -402,16 +420,27 @@ class PETScSolver:
                         % (name, type(field))
                     )
 
+        # Some boundary conditions may have been specified at solver creation
+        bcs = self._manual_bcs
+
+        # If we get new boundary conditions, overwrite the old ones. If not, append
+        if "bcs" in kwargs:
+            bc_ids = [bc.sub_domain for bc in bcs]
+            for bc in kwargs["bcs"]:
+                if bc.sub_domain in bc_ids:
+                    bcs[bc_ids.index(bc.sub_domain)] = bc
+        bc_ids = [bc.sub_domain for bc in bcs]
+
         # Create homogeneous BCs for the Dirichlet part of the boundary
         u = self._fields["velocity"]
         V = u.function_space()
-        bcs = firedrake.DirichletBC(V, u, self._dirichlet_ids)
-        if not self._dirichlet_ids:
+        bcs.append(firedrake.DirichletBC(V, u, self._dirichlet_ids))
+        if len(bcs) == 1 and not self._dirichlet_ids:
             bcs = None
 
         # Find the numeric IDs for the ice front
         boundary_ids = u.function_space().mesh().exterior_facets.unique_markers
-        ice_front_ids_comp = set(self._dirichlet_ids + self._side_wall_ids)
+        ice_front_ids_comp = set(self._dirichlet_ids + self._side_wall_ids + bc_ids)
         ice_front_ids = list(set(boundary_ids) - ice_front_ids_comp)
 
         # Create the action and scale functionals
