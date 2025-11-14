@@ -310,7 +310,7 @@ class IcepackSolver:
         self._max_iterations = self._solver_parameters.pop("max_iterations", 50)
         self._dirichlet_ids = dirichlet_ids
         self._side_wall_ids = side_wall_ids
-        self._bcs = bcs
+        self._manual_bcs = bcs
 
     def setup(self, **kwargs):
         for name, field in kwargs.items():
