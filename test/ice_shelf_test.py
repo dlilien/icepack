@@ -191,3 +191,88 @@ def test_diagnostic_solver_side_friction():
     u = solver.diagnostic_solve(**fields)
 
     assert icepack.norm(u) < icepack.norm(u_initial)
+
+
+# Check that Dirichlet boundary conditions are enforced properly
+@pytest.mark.parametrize("solver_type", ["icepack", "petsc"])
+def test_dirichlet(solver_type):
+    # Create an ice shelf model
+    model = icepack.models.IceShelf()
+    opts = {
+        "dirichlet_ids": [1, 2, 3, 4],
+        "diagnostic_solver_type": solver_type,
+    }
+
+    # Solve the ice shelf model for successively higher mesh resolution
+    N = 32
+    degree = 2
+    mesh = firedrake.RectangleMesh(N, N, Lx, Ly)
+    x, y = firedrake.SpatialCoordinate(mesh)
+
+    V = firedrake.VectorFunctionSpace(mesh, "CG", degree)
+    Q = firedrake.FunctionSpace(mesh, "CG", degree)
+
+
+    h = Function(Q).interpolate(h0 - dh * x / Lx)
+    A = Function(Q).assign(firedrake.Constant(icepack.rate_factor(T)))
+
+    solver = icepack.solvers.FlowSolver(model, **opts)
+
+    # We perturb the true value so that u is offset from the analytical solution
+    u_exact = Function(V).interpolate(as_vector((exact_u(x) + 5, 10)))
+    u_guess = Function(V).interpolate(u_exact + as_vector((perturb_u(x, y), perturb_u(x, y))))
+    u = solver.diagnostic_solve(
+        velocity=u_guess,
+        thickness=h,
+        fluidity=A,
+        strain_rate_min=firedrake.Constant(0.0),
+    )
+    error = norm(u_exact - u) / norm(u_exact)
+
+    # We are just asserting that this should be small
+    print(f"Error with all boundaries locked: {error}")
+    assert error < 1e-7
+
+# Check that manual boundary conditions are enforced properly
+@pytest.mark.parametrize("solver_type", ["icepack", "petsc"])
+def test_manual_bcs(solver_type):
+    # Create an ice shelf model
+    model = icepack.models.IceShelf()
+    opts = {
+        "dirichlet_ids": [1],
+        "diagnostic_solver_type": solver_type,
+    }
+
+    # Solve the ice shelf model for successively higher mesh resolution
+    N = 32
+    degree = 2
+    mesh = firedrake.RectangleMesh(N, N, Lx, Ly)
+    x, y = firedrake.SpatialCoordinate(mesh)
+
+    V = firedrake.VectorFunctionSpace(mesh, "CG", degree)
+    Q = firedrake.FunctionSpace(mesh, "CG", degree)
+
+
+    h = Function(Q).interpolate(h0 - dh * x / Lx)
+    A = Function(Q).assign(firedrake.Constant(icepack.rate_factor(T)))
+
+    BCs = [firedrake.DirichletBC(V.sub(1), firedrake.Function(V.sub(1)).interpolate(10), 3),
+           firedrake.DirichletBC(V.sub(1), firedrake.Function(V.sub(1)).interpolate(10), 4)]
+
+    # We perturb the true value so that this is offset from the analytical solution
+    u_exact = Function(V).interpolate(as_vector((exact_u(x), 10)))
+    u_guess = Function(V).interpolate(u_exact + as_vector((perturb_u(x, y), perturb_u(x, y))))
+
+    solver = icepack.solvers.FlowSolver(model, bcs=BCs, **opts)
+    u = solver.diagnostic_solve(
+        velocity=u_guess,
+        thickness=h,
+        fluidity=A,
+        strain_rate_min=firedrake.Constant(0.0),
+    )
+    error = norm(u_exact - u) / norm(u_exact)
+
+    # We are just asserting that this should be small
+    # If no additional conditions set, error is about 50%
+    print(f"Error with all boundaries locked: {error}")
+    assert error < 1e-4

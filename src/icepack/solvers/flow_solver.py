@@ -329,13 +329,6 @@ class IcepackSolver:
 
         # Some boundary conditions may have been specified at solver creation
         bcs = self._manual_bcs
-
-        # If we get new boundary conditions, overwrite the old ones. If not, append
-        if "bcs" in kwargs:
-            bc_ids = [bc.sub_domain for bc in bcs]
-            for bc in kwargs["bcs"]:
-                if bc.sub_domain in bc_ids:
-                    bcs[bc_ids.index(bc.sub_domain)] = bc
         bc_ids = [bc.sub_domain for bc in bcs]
 
         # Create homogeneous BCs for the Dirichlet part of the boundary
@@ -422,13 +415,6 @@ class PETScSolver:
 
         # Some boundary conditions may have been specified at solver creation
         bcs = self._manual_bcs
-
-        # If we get new boundary conditions, overwrite the old ones. If not, append
-        if "bcs" in kwargs:
-            bc_ids = [bc.sub_domain for bc in bcs]
-            for bc in kwargs["bcs"]:
-                if bc.sub_domain in bc_ids:
-                    bcs[bc_ids.index(bc.sub_domain)] = bc
         bc_ids = [bc.sub_domain for bc in bcs]
 
         # Create homogeneous BCs for the Dirichlet part of the boundary
