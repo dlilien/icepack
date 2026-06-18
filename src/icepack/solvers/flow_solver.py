@@ -405,7 +405,12 @@ class PETScSolver:
         # Create homogeneous BCs for the Dirichlet part of the boundary
         u = self._fields["velocity"]
         V = u.function_space()
-        bcs = firedrake.DirichletBC(V, u, self._dirichlet_ids)
+
+        if "velocity_inflow" in self._fields:
+            u_dirichlet = self._fields["velocity_inflow"]
+        else:
+            u_dirichlet = u
+        bcs = firedrake.DirichletBC(V, u_dirichlet, self._dirichlet_ids)
         if not self._dirichlet_ids:
             bcs = None
 
@@ -550,6 +555,10 @@ class LaxWendroff:
         h = self._fields["thickness"]
         u = self._fields["velocity"]
         h_0 = h.copy(deepcopy=True)
+        if "thickness_inflow" in self._fields:
+            h_inflow = self._fields["thickness_inflow"]
+        else:
+            h_inflow = h_0
 
         Q = h.function_space()
         mesh = Q.mesh()
@@ -562,7 +571,7 @@ class LaxWendroff:
         ds = firedrake.ds if mesh.layers is None else firedrake.ds_v
         flux_cells = -div(h * u) * inner(u, grad(q)) * dx
         flux_out = div(h * u) * q * outflow * ds
-        flux_in = div(h_0 * u) * q * inflow * ds
+        flux_in = div(h_inflow * u) * q * inflow * ds
         d2h_dt2 = flux_cells + flux_out + flux_in
 
         sources = self._continuity.sources(**self._fields)
