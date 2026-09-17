@@ -15,6 +15,8 @@ r"""Solvers for ice physics models"""
 import warnings
 import firedrake
 from firedrake import dx, inner, Constant
+from firedrake.adjoint_utils.blocks import NonlinearVariationalSolveBlock
+from pyadjoint.tape import annotate_tape, get_working_tape, stop_annotating
 import petsc4py
 from ..utilities import default_solver_parameters
 from icepack.calculus import grad, div, FacetNormal
@@ -456,8 +458,34 @@ class PETScSolver:
 
         # Solve the minimization problem and return the velocity field
         self._solver.solve()
+        if self._dirichlet_ids and annotate_tape():
+            blocks = get_working_tape().get_blocks()
+            if blocks and isinstance(blocks[-1], NonlinearVariationalSolveBlock):
+                _sync_bcs_on_replay(blocks[-1])
         u = self._fields["velocity"]
         return u.copy(deepcopy=True)
+
+
+def _sync_bcs_on_replay(block):
+    r"""Make a taped solve replay with the boundary values it was taped with
+
+    We keep one Dirichlet BC on a field that gets updated in place before
+    every solve. Firedrake replays a solve through a clone of the problem
+    that shares the BC objects of the live one, and it never writes the taped
+    boundary values into them, so every replayed solve would see whatever
+    inflow velocity the last forward run happened to leave behind."""
+    forward_solve = block._forward_solve
+
+    def _forward_solve(lhs, rhs, func, bcs, **kwargs):
+        live_bcs = block._ad_solvers["forward_nlvs"]._problem.bcs
+        with stop_annotating():
+            for live, taped in zip(live_bcs, bcs):
+                g_live, g_taped = live.function_arg, taped.function_arg
+                if isinstance(g_live, firedrake.Function) and g_live is not g_taped:
+                    g_live.assign(g_taped)
+        return forward_solve(lhs, rhs, func, bcs, **kwargs)
+
+    block._forward_solve = _forward_solve
 
 
 class ImplicitEuler:
