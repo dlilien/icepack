@@ -15,7 +15,7 @@ from operator import itemgetter
 import sympy
 import ufl
 import firedrake
-from firedrake import inner, outer, sqrt, dx, ds_b, ds_v
+from firedrake import inner, outer, sqrt
 from icepack.models.friction import (
     bed_friction,
     side_friction,
@@ -32,7 +32,13 @@ from icepack.constants import (
 )
 from icepack.utilities import add_kwarg_wrapper, geometric_dimension
 from icepack.calculus import (
-    grad, sym_grad, trace, Identity, FacetNormal, legendre, get_mesh_axes
+    grad,
+    sym_grad,
+    trace,
+    Identity,
+    FacetNormal,
+    legendre,
+    get_mesh_axes,
 )
 
 
@@ -111,7 +117,9 @@ def terminus(**kwargs):
 
 
 def _effective_strain_rate(ε_x, ε_z, ε_min, n=3):
-    return sqrt((inner(ε_x, ε_x) + trace(ε_x) ** 2 + 2 * inner(ε_z, ε_z)) / 2 + ε_min**2)
+    return sqrt(
+        (inner(ε_x, ε_x) + trace(ε_x) ** 2 + 2 * inner(ε_z, ε_z)) / 2 + ε_min**2
+    )
 
 
 def stresses(**kwargs):

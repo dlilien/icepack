@@ -341,9 +341,7 @@ class IcepackSolver:
         ice_front_ids = list(set(boundary_ids) - ice_front_ids_comp)
 
         # Create the action and scale functionals
-        _kwargs = {
-            "side_wall_ids": self._side_wall_ids, "ice_front_ids": ice_front_ids
-        }
+        _kwargs = {"side_wall_ids": self._side_wall_ids, "ice_front_ids": ice_front_ids}
         action = self._model.action(**self._fields, **_kwargs)
         scale = self._model.scale(**self._fields, **_kwargs)
 
@@ -422,9 +420,7 @@ class PETScSolver:
         ice_front_ids = list(set(boundary_ids) - ice_front_ids_comp)
 
         # Create the action and scale functionals
-        _kwargs = {
-            "side_wall_ids": self._side_wall_ids, "ice_front_ids": ice_front_ids
-        }
+        _kwargs = {"side_wall_ids": self._side_wall_ids, "ice_front_ids": ice_front_ids}
         action = self._model.action(**self._fields, **_kwargs)
         F = firedrake.derivative(action, u)
 
@@ -440,6 +436,7 @@ class PETScSolver:
         # for line searches
         if kwargs.get("set_objective", False):
             u_tmp = u.copy(deepcopy=True)
+
             def objective(snes: petsc4py.PETSc.SNES, x: petsc4py.PETSc.Vec) -> float:
                 with u_tmp.dat.vec_wo as vec:
                     vec.setArray(x.array)

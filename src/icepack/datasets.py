@@ -125,8 +125,17 @@ def fetch_randolph_glacier_inventory(name=None):
 def get_glacier_names():
     r"""Return the names of the glaciers we have outlines for"""
     return [
-        "amery", "filchner-ronne", "getz", "helheim", "hiawatha", "jakobshavn",
-        "larsen-2015", "larsen-2018", "larsen-2019", "pine-island", "ross",
+        "amery",
+        "filchner-ronne",
+        "getz",
+        "helheim",
+        "hiawatha",
+        "jakobshavn",
+        "larsen-2015",
+        "larsen-2018",
+        "larsen-2019",
+        "pine-island",
+        "ross",
     ]
 
 

@@ -171,7 +171,9 @@ class MaximumProbabilityEstimator:
         J = E + R
 
         if isinstance(self.controls, (firedrake.Function, firedrake.Constant)):
-            reduced_objective = ReducedFunctional(J, Control(self.controls), **cb_kwargs)
+            reduced_objective = ReducedFunctional(
+                J, Control(self.controls), **cb_kwargs
+            )
         else:
             controls = [Control(field) for field in self.controls]
             reduced_objective = ReducedFunctional(J, controls, **cb_kwargs)
@@ -194,7 +196,9 @@ class MaximumProbabilityEstimator:
                 # here we're translating between our names and ROL's.
                 test = options["Status Test"]
                 test["Step Tolerance"] = self._kwargs.get("step_tolerance", 5e-3)
-                test["Gradient Tolerance"] = self._kwargs.get("gradient_tolerance", 1e-4)
+                test["Gradient Tolerance"] = self._kwargs.get(
+                    "gradient_tolerance", 1e-4
+                )
                 test["Iteration Limit"] = self._kwargs.get("max_iterations", 50)
 
                 general = options["General"]

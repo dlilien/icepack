@@ -118,6 +118,8 @@ except KeyError:
 
 
 reason = "Need EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables"
+
+
 @pytest.mark.skipif(not earthdata_auth, reason=reason)
 def test_meshing_rgi_polygon(tmp_path):
     rgi_filename = icepack.datasets.fetch_randolph_glacier_inventory("alaska")

@@ -25,6 +25,7 @@ import firedrake
 
 try:
     import pygmsh
+
     _has_pygmsh = True
 except ImportError:
     _has_pygmsh = False
@@ -235,7 +236,7 @@ def collection_to_geo(collection, lcar=10e3):
     warnings.warn(
         "This function will be removed in a future release, use "
         "`icepack.meshing.collection_to_gmsh`",
-        FutureWarning
+        FutureWarning,
     )
 
     collection = normalize(collection)
@@ -274,8 +275,7 @@ def collection_to_geo(collection, lcar=10e3):
         return geometry.add_line_loop(line_loop)
 
     line_loops = [
-        _add_loop_to_geometry(multi_line_string)
-        for multi_line_string in points
+        _add_loop_to_geometry(multi_line_string) for multi_line_string in points
     ]
     plane_surface = geometry.add_plane_surface(line_loops[0], line_loops[1:])
     geometry.add_physical(plane_surface)

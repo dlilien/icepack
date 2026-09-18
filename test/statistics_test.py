@@ -89,14 +89,14 @@ def test_multiple_controls():
     V = firedrake.FunctionSpace(mesh, "CG", 1)
 
     r_0 = Constant(0.125)
-    x_0 = Constant((2/3, 2/3))
+    x_0 = Constant((2 / 3, 2 / 3))
     δq = Constant(2.0)
     q_expr = -δq * exp(-inner(x - x_0, x - x_0) / r_0**2)
     q_exact = firedrake.Function(Q).interpolate(q_expr)
     k = Constant(1.0)
 
     r_1 = Constant(0.25)
-    x_1 = Constant((1/3, 1/3))
+    x_1 = Constant((1 / 3, 1 / 3))
     f_0 = Constant(1.0)
     f_expr = f_0 * exp(-inner(x - x_1, x - x_1) / r_1**2)
     f_exact = firedrake.Function(Q).interpolate(f_expr)
@@ -114,16 +114,18 @@ def test_multiple_controls():
     u_exact = simulation([q_exact, f_exact])
 
     σ = Constant(0.01)
+
     def loss_functional(u):
-        return 0.5 * (u - u_exact)**2 / σ**2 * dx
+        return 0.5 * (u - u_exact) ** 2 / σ**2 * dx
 
     α = Constant(0.1)
     β = Constant(0.5)
+
     def regularization(controls):
         q, f = controls
-        return 0.5 * (
-            α**2 * inner(grad(q), grad(q)) + β**2 * inner(grad(f), grad(f))
-        ) * dx
+        return (
+            0.5 * (α**2 * inner(grad(q), grad(q)) + β**2 * inner(grad(f), grad(f))) * dx
+        )
 
     q_init = firedrake.Function(Q)
     f_init = firedrake.Function(Q).interpolate(f_0)
@@ -221,8 +223,10 @@ def test_ice_shelf_inverse(with_noise):
 
     q_control = firedrake.adjoint.Control(q_test)
     min_order = firedrake.adjoint.taylor_test(
-        firedrake.adjoint.ReducedFunctional(J, q_control), q_test,
-        firedrake.Function(q_test.function_space()).assign(0.1))
+        firedrake.adjoint.ReducedFunctional(J, q_control),
+        q_test,
+        firedrake.Function(q_test.function_space()).assign(0.1),
+    )
     assert min_order > 1.98
     firedrake.adjoint.get_working_tape().clear_tape()
 

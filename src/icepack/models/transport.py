@@ -14,7 +14,7 @@ r"""Generic code for transport equations and mass transport"""
 
 from operator import itemgetter
 import firedrake
-from firedrake import min_value, max_value, Constant, inner, grad, div, dx, ds, dS
+from firedrake import min_value, max_value, Constant, inner, grad, div, dx, dS
 from icepack.calculus import grad, FacetNormal
 
 

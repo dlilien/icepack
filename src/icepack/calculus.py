@@ -257,4 +257,3 @@ def vertical_velocity(**kwargs):
     W = firedrake.FunctionSpace(mesh, "CG", xdegree_u, vfamily="GL", vdegree=zdegree_u)
     u_div = firedrake.Function(W).interpolate(div(u))
     return m / h - vertically_integrate(u_div, h)
-

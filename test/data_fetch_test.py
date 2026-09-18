@@ -12,6 +12,8 @@ except KeyError:
 
 
 reason = "Need EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables"
+
+
 @pytest.mark.skipif(not earthdata_auth, reason=reason)
 def test_fetching_data():
     function_names = [

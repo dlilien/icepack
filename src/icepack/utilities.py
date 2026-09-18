@@ -14,7 +14,6 @@
 r"""Miscellaneous utilities for depth-averaging 3D fields, computing
 horizontal gradients of 3D fields, lifting 2D fields into 3D, etc."""
 
-from operator import itemgetter
 import inspect
 import numpy as np
 import firedrake

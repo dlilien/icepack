@@ -145,7 +145,9 @@ def test_diagnostic_solver_parameterization():
         u_exact = Function(V).interpolate(as_vector((exact_u(x), 0)))
         u_guess = Function(V).interpolate(as_vector((exact_u(x) + perturb_u(x, y), 0)))
         h = Function(Q).interpolate(h0 - dh * x / Lx)
-        B = Function(Q).interpolate(firedrake.Constant(icepack.rate_factor(T) ** (-1 / n)))
+        B = Function(Q).interpolate(
+            firedrake.Constant(icepack.rate_factor(T) ** (-1 / n))
+        )
 
         solver = icepack.solvers.FlowSolver(model, **opts)
         u = solver.diagnostic_solve(velocity=u_guess, thickness=h, rheology=B)

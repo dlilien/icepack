@@ -118,7 +118,7 @@ def test_order_0(dim):
 def test_sia_limit():
     Nx = 32
     mesh_x = firedrake.IntervalMesh(Nx, Lx)
-    x, = firedrake.SpatialCoordinate(mesh_x)
+    (x,) = firedrake.SpatialCoordinate(mesh_x)
 
     Q_x = firedrake.FunctionSpace(mesh_x, "CG", 2)
     h = firedrake.Function(Q_x).interpolate(h0 - dh * x / Lx)
@@ -130,14 +130,14 @@ def test_sia_limit():
     V_x = firedrake.FunctionSpace(mesh_x, "CG", 2)
     p = ρ_I * g * h
     A = Constant(icepack.rate_factor(273.0))
-    u_expr = 2 * A / (n + 2) * p**n * h * (δs / Lx)**n
+    u_expr = 2 * A / (n + 2) * p**n * h * (δs / Lx) ** n
     u0 = firedrake.Function(V_x).interpolate(u_expr)
 
     def penalty(**kwargs):
         u = kwargs["velocity"]
         h = kwargs["thickness"]
         λ = Constant(0.0)
-        return 0.5 * λ*2 * inner(grad(u), grad(u))
+        return 0.5 * λ * 2 * inner(grad(u), grad(u))
 
     sia_model = icepack.models.ShallowIce(penalty=penalty)
     sia_opts = {
@@ -145,9 +145,7 @@ def test_sia_limit():
         "diagnostic_solver_parameters": {"snes_rtol": 1e-6},
     }
     sia_solver = icepack.solvers.FlowSolver(sia_model, **sia_opts)
-    u_sia = sia_solver.diagnostic_solve(
-        velocity=u0, thickness=h, surface=s, fluidity=A
-    )
+    u_sia = sia_solver.diagnostic_solve(velocity=u0, thickness=h, surface=s, fluidity=A)
 
     mesh = firedrake.ExtrudedMesh(mesh_x, layers=1)
     x, ζ = firedrake.SpatialCoordinate(mesh)
@@ -157,7 +155,7 @@ def test_sia_limit():
 
     V_xz = firedrake.FunctionSpace(mesh, "CG", 2, vfamily="GL", vdegree=4)
     p = ρ_I * g * h
-    u_expr = 2 * A / (n + 2) * p**n * h * (δs / Lx)**n
+    u_expr = 2 * A / (n + 2) * p**n * h * (δs / Lx) ** n
     u0 = firedrake.Function(V_xz).interpolate(u_expr)
 
     # Make the friction coefficient very large and compute the hybrid model

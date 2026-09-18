@@ -55,7 +55,7 @@ def test_manufactured_solution():
 
     h_L = h0 - dh
     s_L = s0 - ds
-    β = dh / ds * (ρ_I * h_L ** 2 - ρ_W * (s_L - h_L) ** 2) / (ρ_I * h_L**2)
+    β = dh / ds * (ρ_I * h_L**2 - ρ_W * (s_L - h_L) ** 2) / (ρ_I * h_L**2)
 
     ρ = β * ρ_I * ds / dh
     P = ρ * g * h / 4
@@ -119,7 +119,8 @@ u_inflow = 100.0
 # divergence will take up.
 h_L = h0 - dh
 s_L = s0 - ds
-β = dh / ds * (ρ_I * h_L**2 - ρ_W * (s_L - h_L)**2) / (ρ_I * h_L**2)
+β = dh / ds * (ρ_I * h_L**2 - ρ_W * (s_L - h_L) ** 2) / (ρ_I * h_L**2)
+
 
 # We'll arbitrarily pick this to be the velocity, then we'll find a friction
 # coefficient that makes this velocity an exact solution of the momentum
